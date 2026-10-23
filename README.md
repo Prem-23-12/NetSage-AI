@@ -8,7 +8,7 @@ NetSage AI is an AI-assisted troubleshooting tool designed for Cisco-style netwo
 The project also evaluates the reliability of AI diagnoses by checking evidence grounding, recording reviewer corrections, and visualizing results through an interactive Streamlit dashboard.
   
 ## Key Features
-
+ 
 - **Deterministic rule checking:** Detects supported configuration issues using predefined Python rules.
 - **AI-assisted diagnosis:** Uses the Groq API to generate structured diagnoses and recommended fixes.
 - **Evidence-grounding checks:** Flags AI claims that may not be supported by the available network evidence.
