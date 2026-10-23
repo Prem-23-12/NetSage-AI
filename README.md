@@ -83,9 +83,7 @@ NetSage-AI/
 ├── inspect_flagged.py
 ├── requirements.txt
 ├── README.md
-├── responsible_ai_log.md
-├── prompt/
-│   └── diagnose_prompt.md
+|
 └── data/
     ├── cases.csv
     ├── rule_findings.csv
