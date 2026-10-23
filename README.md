@@ -83,7 +83,6 @@ NetSage-AI/
 ├── inspect_flagged.py
 ├── requirements.txt
 ├── README.md
-|
 └── data/
     ├── cases.csv
     ├── rule_findings.csv
