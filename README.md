@@ -314,7 +314,4 @@ Use a case such as `NS-025` only after verifying its actual inputs, AI output, a
 
 ---
 
-*NetSage AI is an educational troubleshooting and evaluation tool. Its outputs are decision-support suggestions, not a substitute for validating network changes in a controlled environment.*#   N e t S a g e - A I  
- #   N e t S a g e - - A I  
- #   C i s c o - N e t S a g e - A I  
- 
+*NetSage AI is an educational troubleshooting and evaluation tool. Its outputs are decision-support suggestions, not a substitute for validating network changes in a controlled environment.*#
