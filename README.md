@@ -108,8 +108,6 @@ NetSage-AI/
 | `inspect_flagged.py` | Helps inspect cases flagged by the grounding evaluator. |
 | `review_log.csv` | Records human decisions, corrections, and reviewer notes. |
 | `dashboard_data.csv` | Provides the joined data used by the dashboard. |
-| `diagnose_prompt.md` | Defines the AI prompt template and worked examples. |
-| `responsible_ai_log.md` | Documents selected corrections, limitations, and evaluation observations. |
 | `app.py` | Runs the interactive Streamlit dashboard. |
 
 ## Installation and Setup
