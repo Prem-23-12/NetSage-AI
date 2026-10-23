@@ -1,0 +1,579 @@
+"""
+NetSage AI - Case Dataset Generator
+Produces data/cases.csv: >=30 Packet-Tracer-style troubleshooting cases
+covering VLAN, gateway, DHCP, DNS, routing, ACL, NAT, and wireless faults.
+
+Each case includes a `rule_hint` field: structured metadata (expected VLAN,
+expected gateway, expected route, etc.) that the rule_checker.py uses to run
+deterministic checks. This mirrors how real network rule engines work -
+they compare live state against known design intent. The hint encodes what
+to check, never the fault itself, so it doesn't leak the answer to the AI.
+"""
+import pandas as pd
+
+cases = []
+
+
+def add(cid, category, site, symptom, topology_note, show_output,
+        expected_fault, osi_layer, concept_tag, severity, rule_hint):
+    cases.append({
+        "case_id": cid,
+        "category": category,
+        "site": site,
+        "symptom": symptom.strip(),
+        "topology_note": topology_note.strip(),
+        "show_output": show_output.strip("\n"),
+        "expected_fault": expected_fault.strip(),
+        "osi_layer": osi_layer,
+        "concept_tag": concept_tag,
+        "severity": severity,
+        "rule_hint": rule_hint,
+    })
+
+
+# ---------------------------------------------------------------- VLAN (4)
+add("NS-001", "VLAN", "Building A Floor 2",
+    "Two PCs both plugged into SW1 in Room 204 cannot ping each other even though both report IPs in 192.168.10.0/24.",
+    "SW1 access ports Fa0/5 (PC-A) and Fa0/6 (PC-B) should both be in VLAN 10 (Sales).",
+    """
+SW1# show vlan brief
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/7
+10   Sales                            active    Fa0/5
+20   Engineering                      active    Fa0/6, Fa0/8
+
+SW1# show interfaces fa0/5 switchport
+Name: Fa0/5
+Administrative Mode: static access
+Access Mode VLAN: 10 (Sales)
+
+SW1# show interfaces fa0/6 switchport
+Name: Fa0/6
+Administrative Mode: static access
+Access Mode VLAN: 20 (Engineering)
+""",
+    "PC-B's port Fa0/6 is assigned to VLAN 20 instead of VLAN 10, so the two PCs are on different broadcast domains despite matching IP subnet config.",
+    "Layer 2 - Data Link", "VLAN Port Assignment", "Medium",
+    "vlan_expected:10;port_check:Fa0/6"),
+
+add("NS-002", "VLAN", "Engineering Lab",
+    "New PC in the Engineering Lab gets no VLAN 30 connectivity; ping to gateway 192.168.30.1 times out.",
+    "Trunk link SW2-R1 should carry VLAN 30. Access port Fa0/12 on SW2 should be VLAN 30.",
+    """
+SW2# show vlan brief
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Fa0/1, Fa0/2
+30   Lab-Engineering                  active    Fa0/12
+
+SW2# show interfaces trunk
+Port        Mode             Encapsulation  Status        Native vlan
+Gi0/1       on               802.1q         trunking      1
+
+Port        Vlans allowed on trunk
+Gi0/1       1,10,20
+
+Port        Vlans allowed and active in management domain
+Gi0/1       1,10,20
+""",
+    "VLAN 30 is not included in the allowed VLAN list on trunk Gi0/1, so VLAN 30 traffic is dropped before reaching the router subinterface.",
+    "Layer 2 - Data Link", "VLAN Trunking (allowed-vlan list)", "High",
+    "vlan_expected:30;trunk_check:Gi0/1"),
+
+add("NS-003", "VLAN", "Sales Branch",
+    "PC in VLAN 40 (Marketing) intermittently loses connectivity to same-VLAN devices after a switch reboot.",
+    "Fa0/9 on SW3 should be a static access port in VLAN 40, not participating in any trunk negotiation.",
+    """
+SW3# show interfaces fa0/9 switchport
+Name: Fa0/9
+Administrative Mode: dynamic auto
+Operational Mode: static access
+Access Mode VLAN: 40 (Marketing)
+Voice VLAN: none
+
+SW3# show vlan brief
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Fa0/2, Fa0/3
+40   Marketing                        active    Fa0/9
+""",
+    "Port Fa0/9 is left in dynamic auto trunking mode instead of static access, causing intermittent DTP renegotiation and dropped frames after reboot.",
+    "Layer 2 - Data Link", "VLAN Port Mode (DTP)", "Low",
+    "vlan_expected:40;port_check:Fa0/9"),
+
+add("NS-004", "VLAN", "Library Annex",
+    "All PCs on SW4 lost connectivity to each other and to the router after a colleague made switch config changes.",
+    "VLAN 50 (Library) must exist on SW4 for ports Fa0/2-Fa0/8 to function.",
+    """
+SW4# show vlan brief
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Fa0/1, Fa0/9
+
+SW4# show interfaces fa0/3 switchport
+Name: Fa0/3
+Administrative Mode: static access
+Access Mode VLAN: 50 (Inactive)
+""",
+    "VLAN 50 was deleted from the switch database, so every port assigned to it shows 'Inactive' and carries no traffic.",
+    "Layer 2 - Data Link", "Missing VLAN in Database", "High",
+    "vlan_expected:50"),
+
+# ------------------------------------------------------------ GATEWAY (4)
+add("NS-005", "GATEWAY", "Building A Floor 2",
+    "PC-C has a valid IP 192.168.10.15/24 but cannot reach anything outside its own subnet.",
+    "PCs in VLAN 10 should use R1's Gi0/0.10 subinterface, 192.168.10.1, as default gateway.",
+    """
+PC-C> ipconfig
+IP Address......: 192.168.10.15
+Subnet Mask......: 255.255.255.0
+Default Gateway...: 192.168.10.254
+
+R1# show ip interface brief
+Interface              IP-Address      OK? Method Status                Protocol
+GigabitEthernet0/0.10   192.168.10.1    YES manual up                    up
+""",
+    "PC-C's configured default gateway 192.168.10.254 does not match the router subinterface address 192.168.10.1, so all off-subnet traffic has nowhere to go.",
+    "Layer 3 - Network", "Default Gateway Misconfiguration", "Medium",
+    "gateway_pc:192.168.10.254;gateway_expected:192.168.10.1"),
+
+add("NS-006", "GATEWAY", "Sales Branch",
+    "Entire VLAN 40 subnet lost internet access simultaneously; internal same-VLAN traffic still works.",
+    "R2's Gi0/1.40 subinterface is the gateway for 192.168.40.0/24.",
+    """
+R2# show ip interface brief
+Interface                 IP-Address      OK? Method Status                    Protocol
+GigabitEthernet0/1.40      192.168.40.1    YES manual administratively down     down
+
+R2# show running-config interface gi0/1.40
+interface GigabitEthernet0/1.40
+ encapsulation dot1Q 40
+ ip address 192.168.40.1 255.255.255.0
+ shutdown
+""",
+    "The gateway subinterface Gi0/1.40 is administratively shut down, so it cannot forward any traffic even though the IP is correctly configured.",
+    "Layer 1 - Physical / Layer 3", "Interface Administratively Down", "High",
+    "interface_check:GigabitEthernet0/1.40"),
+
+add("NS-007", "GATEWAY", "Engineering Lab",
+    "PC-D can ping its own gateway but nothing beyond it; a duplicate IP warning appeared briefly on boot.",
+    "192.168.30.1 should be uniquely assigned to R1 Gi0/0.30 only.",
+    """
+PC-D> ipconfig
+IP Address......: 192.168.30.1
+Subnet Mask......: 255.255.255.0
+Default Gateway...: 192.168.30.1
+
+R1# show ip interface brief
+Interface               IP-Address      OK? Method Status  Protocol
+GigabitEthernet0/0.30     192.168.30.1    YES manual up      up
+""",
+    "PC-D was statically assigned 192.168.30.1, the same address as the router's own gateway interface, creating an IP conflict that breaks routing for that host.",
+    "Layer 3 - Network", "Duplicate IP Address", "High",
+    "duplicate_ip_check:192.168.30.1"),
+
+add("NS-008", "GATEWAY", "Library Annex",
+    "PC-E can reach the gateway and other subnets, but a specific server report is intermittently unreachable.",
+    "PC-E and the file server 192.168.50.20 are both meant to sit on 192.168.50.0/24.",
+    """
+PC-E> ipconfig
+IP Address......: 192.168.50.22
+Subnet Mask......: 255.255.0.0
+Default Gateway...: 192.168.50.1
+
+R3# show ip interface brief
+Interface               IP-Address      OK? Method Status  Protocol
+GigabitEthernet0/2.50     192.168.50.1    YES manual up      up
+""",
+    "PC-E's subnet mask (255.255.0.0) does not match the router's /24 configuration, causing PC-E to think the server is locally reachable via ARP when it actually needs routing, producing intermittent failures.",
+    "Layer 3 - Network", "Subnet Mask Mismatch", "Medium",
+    "mask_check:PC-E:255.255.0.0;expected_mask:255.255.255.0"),
+
+# -------------------------------------------------------------- DHCP (4)
+add("NS-009", "DHCP", "Building A Floor 2",
+    "Several new PCs in VLAN 10 boot up with 169.254.x.x addresses and no network access.",
+    "R1 runs the DHCP pool SALES-POOL for 192.168.10.0/24, default-router 192.168.10.1.",
+    """
+R1# show ip dhcp pool
+Pool SALES-POOL :
+ Network         : 192.168.20.0 /24
+ Default router  : 192.168.10.1
+ Lease time      : 1 days
+
+R1# show ip dhcp binding
+(no bindings)
+""",
+    "The DHCP pool SALES-POOL is configured for the wrong network (192.168.20.0 instead of 192.168.10.0), so it never leases addresses to VLAN 10 clients, which fall back to APIPA.",
+    "Layer 3 - Network / Application", "DHCP Pool Network Misconfiguration", "High",
+    "dhcp_network_expected:192.168.10.0"),
+
+add("NS-010", "DHCP", "Sales Branch",
+    "About half of VLAN 40 PCs get IP addresses fine; the rest fail DHCP intermittently during the morning rush.",
+    "MKT-POOL for 192.168.40.0/24 supports up to 50 hosts, lease 1 day.",
+    """
+R2# show ip dhcp pool
+Pool MKT-POOL :
+ Network            : 192.168.40.0 /24
+ Leased addresses   : 48
+ Excluded addresses : 192.168.40.1 - 192.168.40.60
+
+R2# show ip dhcp conflict
+IP address       Detection method   Detection time
+192.168.40.61     Ping                Aug 20 2026 09:14
+""",
+    "The excluded-address range 192.168.40.1-192.168.40.60 combined with only /24 space leaves too few usable leases for the number of hosts, so the pool runs out during peak hours.",
+    "Layer 3 - Network / Application", "DHCP Pool Exhaustion", "Medium",
+    "dhcp_pool_check:MKT-POOL"),
+
+add("NS-011", "DHCP", "Engineering Lab",
+    "All PCs in the Engineering Lab fail DHCP and show no IP at all, even though the pool config looks correct.",
+    "R1 should have 'service dhcp' enabled globally and Gi0/0.30 should not be excluded from DHCP relay.",
+    """
+R1# show running-config | include dhcp
+no service dhcp
+ip dhcp pool LAB-POOL
+ network 192.168.30.0 255.255.255.0
+ default-router 192.168.30.1
+""",
+    "The DHCP service is globally disabled ('no service dhcp'), so the router ignores all DISCOVER broadcasts regardless of the pool configuration.",
+    "Layer 3 - Network / Application", "DHCP Service Disabled", "High",
+    "dhcp_service_check:disabled"),
+
+add("NS-012", "DHCP", "Library Annex",
+    "New laptops in the Library Annex receive an IP but cannot browse any external website; internal file shares work fine.",
+    "LIB-POOL should hand out dns-server 8.8.8.8 alongside default-router 192.168.50.1.",
+    """
+R3# show ip dhcp pool
+Pool LIB-POOL :
+ Network         : 192.168.50.0 /24
+ Default router  : 192.168.50.1
+ DNS server      : 0.0.0.0
+ Lease time      : 1 days
+""",
+    "The DHCP pool's dns-server option is set to 0.0.0.0 instead of a working DNS server, so clients get an IP and gateway but cannot resolve external hostnames.",
+    "Layer 7 - Application", "DHCP DNS Option Misconfiguration", "Medium",
+    "dhcp_dns_check:LIB-POOL"),
+
+# --------------------------------------------------------------- DNS (4)
+add("NS-013", "DNS", "Building A Floor 2",
+    "PC-F can ping 8.8.8.8 successfully but 'ping google.com' fails with 'Unknown host'.",
+    "PC-F should be configured with DNS server 192.168.10.5 (internal DNS relay).",
+    """
+PC-F> ipconfig /all
+IP Address......: 192.168.10.20
+Default Gateway...: 192.168.10.1
+DNS Servers......: 0.0.0.0
+
+PC-F> ping 192.168.10.5
+Request timed out. (4/4 lost)
+""",
+    "PC-F has no DNS server configured (0.0.0.0), so name resolution fails while raw IP connectivity works fine - a classic Layer 7 vs Layer 3 split.",
+    "Layer 7 - Application", "Missing DNS Server Configuration", "Medium",
+    "dns_pc_check:0.0.0.0"),
+
+add("NS-014", "DNS", "Sales Branch",
+    "Whole VLAN 40 can reach the internal DNS server by IP but web browsing by hostname fails for everyone.",
+    "Internal DNS server sits at 192.168.40.5 and should be up and answering on UDP/53.",
+    """
+PC-G> ping 192.168.40.5
+Reply from 192.168.40.5: bytes=32 time=2ms TTL=128
+
+DNS-SRV# show ip interface brief
+Interface        IP-Address      OK? Method Status  Protocol
+FastEthernet0      192.168.40.5    YES manual up      up
+
+DNS-SRV# show services dns
+DNS Service: Off
+""",
+    "The DNS service on the internal DNS server is administratively turned off, so even though the host is pingable, it never answers resolution queries.",
+    "Layer 7 - Application", "DNS Service Not Running", "High",
+    "dns_service_check:DNS-SRV"),
+
+add("NS-015", "DNS", "Engineering Lab",
+    "PC-H resolves internal hostnames fine but every external domain lookup times out.",
+    "PC-H's secondary DNS should be a reachable public resolver; primary is the internal server 192.168.30.5.",
+    """
+PC-H> ipconfig /all
+DNS Servers......: 192.168.30.5, 192.168.30.5
+
+DNS-SRV# show running-config | include forward
+no ip domain-lookup-forward
+""",
+    "PC-H's secondary DNS entry duplicates the internal server instead of pointing to an external resolver, and the internal server has no forwarder configured, so external names can never be resolved.",
+    "Layer 7 - Application", "DNS Forwarding Misconfiguration", "Medium",
+    "dns_forward_check:DNS-SRV"),
+
+add("NS-016", "DNS", "Library Annex",
+    "One specific PC in the Library Annex cannot resolve any hostname while its neighbors on the same switch work fine.",
+    "All Library Annex PCs should receive DNS 192.168.50.5 via DHCP.",
+    """
+PC-I> ipconfig /all
+DHCP Enabled......: No
+IP Address......: 192.168.50.30 (static)
+DNS Servers......: (none)
+""",
+    "PC-I was statically configured (DHCP disabled) with no DNS server entered, so it never picked up the DNS setting the DHCP pool provides to every other host.",
+    "Layer 7 - Application", "Static Config Bypassing DHCP DNS", "Low",
+    "dns_pc_check:none"),
+
+# ----------------------------------------------------------- ROUTING (4)
+add("NS-017", "ROUTING", "Building A Floor 2",
+    "PC in VLAN 10 can reach VLAN 20 but cannot reach VLAN 30 (Engineering Lab) at all.",
+    "R1 needs routes/subinterfaces for VLAN 10 (.10.0/24), VLAN 20 (.20.0/24), and VLAN 30 (.30.0/24).",
+    """
+R1# show ip route
+     192.168.10.0/24 is directly connected, GigabitEthernet0/0.10
+     192.168.20.0/24 is directly connected, GigabitEthernet0/0.20
+
+R1# show running-config | include interface Gi
+interface GigabitEthernet0/0.10
+interface GigabitEthernet0/0.20
+""",
+    "No subinterface or route exists for the 192.168.30.0/24 (VLAN 30) network, so the router has no way to forward traffic there.",
+    "Layer 3 - Network", "Missing Route / Subinterface", "High",
+    "route_expected:192.168.30.0/24"),
+
+add("NS-018", "ROUTING", "Sales Branch",
+    "Branch office (192.168.60.0/24 via R2) cannot reach HQ subnet 192.168.10.0/24; HQ can reach the branch fine.",
+    "R2 needs a static route back to 192.168.10.0/24 via its WAN link 10.10.10.1.",
+    """
+R2# show ip route
+S*   0.0.0.0/0 [1/0] via 10.10.10.1
+     192.168.60.0/24 is directly connected, GigabitEthernet0/0
+     10.10.10.0/30 is directly connected, Serial0/0/0
+
+R2# show running-config | include ip route
+ip route 0.0.0.0 0.0.0.0 10.10.10.1
+""",
+    "R2 only has a default route toward the WAN, but the HQ side has a specific route back to the branch, creating asymmetric routing - the return path from HQ to branch works but R2 never learns a path to 192.168.10.0/24 explicitly. The missing explicit or default route on the HQ router is the actual gap.",
+    "Layer 3 - Network", "Missing Static Route (asymmetric)", "High",
+    "route_expected:192.168.10.0/24"),
+
+add("NS-019", "ROUTING", "Engineering Lab",
+    "After a router reload, all inter-VLAN routing in the Engineering Lab stopped; interfaces show up/up.",
+    "R1 should be running 'ip routing' globally to route between subinterfaces.",
+    """
+R1# show ip interface brief
+Interface               IP-Address      OK? Method Status  Protocol
+GigabitEthernet0/0.10     192.168.10.1    YES manual up      up
+GigabitEthernet0/0.30     192.168.30.1    YES manual up      up
+
+R1# show running-config | include ip routing
+no ip routing
+""",
+    "Global IP routing was disabled on the router (likely reset by the reload picking up a saved config), so it no longer routes between its own subinterfaces despite them being up.",
+    "Layer 3 - Network", "IP Routing Disabled Globally", "High",
+    "routing_enabled_check:R1"),
+
+add("NS-020", "ROUTING", "Library Annex",
+    "Library Annex (192.168.50.0/24) has full connectivity to everything except one remote subnet 172.16.5.0/24 used by a partner lab.",
+    "A static route to 172.16.5.0/24 should point via next-hop 192.168.99.2.",
+    """
+R3# show ip route
+     192.168.50.0/24 is directly connected, GigabitEthernet0/2
+     192.168.99.0/30 is directly connected, Serial0/1/0
+S    172.16.5.0/24 [1/0] via 192.168.99.20
+""",
+    "The static route to 172.16.5.0/24 was entered with the wrong next-hop (192.168.99.20 instead of 192.168.99.2), a typo one octet off from the correct value, so packets are sent to a non-existent neighbor.",
+    "Layer 3 - Network", "Incorrect Static Route Next-Hop", "Medium",
+    "route_expected:172.16.5.0/24"),
+
+# ----------------------------------------------------------------- ACL (4)
+add("NS-021", "ACL", "Building A Floor 2",
+    "VLAN 10 PCs can reach everything except the HR server 192.168.99.10, which times out for all users including HR staff.",
+    "ACL 101 on R1 Gi0/0.10 should only block VLAN 10 -> HR server for non-HR hosts (192.168.10.100-110 are HR).",
+    """
+R1# show access-lists 101
+Extended IP access list 101
+    10 deny ip 192.168.10.0 0.0.0.255 host 192.168.99.10 (234 matches)
+    20 permit ip any any (890 matches)
+
+R1# show ip interface gi0/0.10 | include access list
+  Outgoing access list is not set
+  Inbound  access list is 101
+""",
+    "ACL 101's first line denies all of 192.168.10.0/24 to the HR server with no exception carved out for the HR staff subnet (192.168.10.100-110), so the ACL is simply too broad.",
+    "Layer 3/4 - Network/Transport", "Overly Broad ACL", "High",
+    "acl_check:101"),
+
+add("NS-022", "ACL", "Sales Branch",
+    "Marketing VLAN 40 users report that internal email works but they cannot reach any website (HTTP/HTTPS).",
+    "ACL 110 on R2 should permit TCP 80/443 outbound from 192.168.40.0/24 to any.",
+    """
+R2# show access-lists 110
+Extended IP access list 110
+    10 permit tcp 192.168.40.0 0.0.0.255 any eq 25 (1200 matches)
+    20 permit tcp 192.168.40.0 0.0.0.255 any eq 110 (600 matches)
+    30 deny ip any any (5400 matches)
+""",
+    "ACL 110 only explicitly permits SMTP (25) and POP3 (110) before the implicit/explicit deny-any, with no line allowing TCP 80 or 443, so all web traffic is silently dropped.",
+    "Layer 3/4 - Network/Transport", "Missing Permit Rule (web ports)", "High",
+    "acl_check:110"),
+
+add("NS-023", "ACL", "Engineering Lab",
+    "Engineering Lab (VLAN 30) users cannot ping the gateway or anything else; they had access yesterday.",
+    "ACL 120 should only restrict Telnet/SSH management access, not general traffic, on Gi0/0.30.",
+    """
+R1# show access-lists 120
+Extended IP access list 120
+    10 deny ip any any (15400 matches)
+
+R1# show ip interface gi0/0.30 | include access list
+  Inbound  access list is 120
+""",
+    "ACL 120 as currently written is a single 'deny ip any any' with no permit statements at all, blocking every packet inbound on Gi0/0.30 - likely an incomplete ACL that was applied before the permit lines were added.",
+    "Layer 3/4 - Network/Transport", "Incomplete ACL (missing permits)", "High",
+    "acl_check:120"),
+
+add("NS-024", "ACL", "Library Annex",
+    "Guest laptops in the Library Annex can reach the internet but are also able to reach the internal staff file server, which should be blocked.",
+    "ACL 130 should deny Library-Guest (192.168.55.0/24) access to staff server 192.168.50.20 specifically.",
+    """
+R3# show access-lists 130
+Extended IP access list 130
+    10 permit ip 192.168.55.0 0.0.0.255 any (3400 matches)
+
+R3# show ip interface gi0/3 | include access list
+  Inbound  access list is 130
+""",
+    "ACL 130 only contains a blanket permit for the guest subnet with no deny rule for the staff server, so the intended isolation between guest and staff networks was never actually implemented.",
+    "Layer 3/4 - Network/Transport (Security)", "Missing Deny Rule (segmentation)", "Medium",
+    "acl_check:130"),
+
+# ----------------------------------------------------------------- NAT (4)
+add("NS-025", "NAT", "Building A Floor 2",
+    "No internal PC can reach the internet even though the default route and ISP link both show up/up.",
+    "R1 should NAT-overload 192.168.10.0/24 and 192.168.20.0/24 out Gi0/1 (the ISP-facing interface).",
+    """
+R1# show ip nat translations
+(no translations)
+
+R1# show running-config | include nat
+ip nat inside source list 1 interface GigabitEthernet0/1 overload
+access-list 1 permit 192.168.10.0 0.0.0.255
+
+R1# show ip interface gi0/0.10 | include NAT
+  NAT is not enabled on this interface
+""",
+    "The 'ip nat inside' designation was never applied to Gi0/0.10 (or any internal interface), so even though the NAT overload rule exists, the router doesn't know which interfaces are 'inside' to translate.",
+    "Layer 3 - Network", "NAT Inside/Outside Interface Not Marked", "High",
+    "nat_check:R1"),
+
+add("NS-026", "NAT", "Sales Branch",
+    "Marketing VLAN 40 can browse the internet fine; Sales VLAN 10 at the same branch cannot.",
+    "NAT ACL 1 should permit both 192.168.10.0/24 and 192.168.40.0/24 for overload translation.",
+    """
+R2# show running-config | include access-list 1
+access-list 1 permit 192.168.40.0 0.0.0.255
+
+R2# show ip nat translations
+Pro  Inside global      Inside local       Outside local      Outside global
+tcp  203.0.113.5:1024   192.168.40.10:1024  93.184.216.34:80   93.184.216.34:80
+""",
+    "NAT access-list 1 only includes the 192.168.40.0/24 network; the 192.168.10.0/24 (Sales) network was never added, so Sales traffic has no matching translation rule and is dropped at the NAT boundary.",
+    "Layer 3 - Network", "NAT ACL Missing Network", "Medium",
+    "nat_check:R2"),
+
+add("NS-027", "NAT", "Engineering Lab",
+    "Internet access for the Engineering Lab works for a while each morning, then stops until the router is reloaded.",
+    "R1 uses NAT overload on a single ISP-facing interface; no NAT pool with static entries is configured.",
+    """
+R1# show ip nat statistics
+Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+Peak translations: 4096, occurred 0:42:10 ago
+Expired translations: 51200
+
+R1# show ip nat translations
+(no translations)
+""",
+    "The NAT translation table hit its peak capacity (4096) and expired entries aren't being cleared fast enough under load, exhausting available port/address combinations until a reload clears the table - a NAT overload capacity/timeout issue rather than a config typo.",
+    "Layer 3/4 - Network/Transport", "NAT Overload Table Exhaustion", "Medium",
+    "nat_check:R1_capacity"),
+
+add("NS-028", "NAT", "Library Annex",
+    "External partner cannot initiate a connection to the internally hosted library catalog server on its public-facing NAT address.",
+    "A static NAT entry should map public 203.0.113.20 to internal library server 192.168.50.30 port 80.",
+    """
+R3# show ip nat translations
+Pro  Inside global         Inside local        Outside local  Outside global
+---  203.0.113.20          192.168.50.3        ---            ---
+
+R3# show running-config | include nat
+ip nat inside source static 192.168.50.3 203.0.113.20
+""",
+    "The static NAT entry points to 192.168.50.3 instead of the actual library server at 192.168.50.30 - a typo missing the trailing digit - so inbound connections are forwarded to the wrong (likely nonexistent) internal host.",
+    "Layer 3 - Network", "Static NAT Wrong Internal IP", "Medium",
+    "nat_check:R3_static"),
+
+# ------------------------------------------------------------- WIRELESS (4)
+add("NS-029", "WIRELESS", "Building A Floor 2",
+    "Laptops can see the 'CorpNet' SSID and associate, but authentication fails every time with the correct password.",
+    "WLAN 'CorpNet' should use WPA2-PSK with passphrase 'C1sc0Secure!' and be mapped to VLAN 10.",
+    """
+AP1# show wlan summary
+WLAN ID  WLAN Name   Status   Security
+1        CorpNet     Enabled  WPA2-PSK
+
+AP1# show running-config | include CorpNet
+wlan CorpNet 1 CorpNet
+ security wpa wpa2 psk ascii C1sc0Secur3!
+""",
+    "The passphrase configured on the AP (C1sc0Secur3! - using a '3' for the E) doesn't match the passphrase distributed to staff (C1sc0Secure!), a one-character typo causing every authentication attempt to fail.",
+    "Layer 2 - Data Link (Security)", "WLAN Authentication Key Mismatch", "Medium",
+    "wlan_check:CorpNet"),
+
+add("NS-030", "WIRELESS", "Sales Branch",
+    "Guest devices join 'Guest-WiFi' and get internet access, but can also reach the internal Marketing file server, which should be isolated.",
+    "'Guest-WiFi' WLAN should map to VLAN 45 (isolated guest VLAN), not VLAN 40 (Marketing).",
+    """
+AP2# show wlan summary
+WLAN ID  WLAN Name    Status   Interface/VLAN
+2        Guest-WiFi   Enabled  40
+
+AP2# show running-config | include Guest-WiFi
+wlan Guest-WiFi 2 Guest-WiFi
+ interface Vlan40
+""",
+    "The Guest-WiFi WLAN is mapped to VLAN 40 (Marketing's production VLAN) instead of the isolated Guest VLAN 45, so guest traffic lands directly on the internal network with no isolation.",
+    "Layer 2 - Data Link (Security)", "WLAN Mapped to Wrong VLAN", "High",
+    "wlan_vlan_expected:45"),
+
+add("NS-031", "WIRELESS", "Engineering Lab",
+    "Engineering Lab wireless clients connect and authenticate fine but get no IP address and no connectivity.",
+    "AP3's uplink trunk port on SW2 should carry VLAN 30 for wireless clients to reach the DHCP pool.",
+    """
+SW2# show interfaces trunk
+Port        Mode     Encapsulation  Status      Native vlan
+Fa0/24      on       802.1q         trunking    1
+
+Port        Vlans allowed on trunk
+Fa0/24      1,10,20
+
+AP3# show wlan summary
+WLAN ID  WLAN Name    Status   Interface/VLAN
+3        Lab-Wireless Enabled  30
+""",
+    "VLAN 30 is missing from the allowed-VLAN list on the AP's uplink trunk (Fa0/24 only allows 1,10,20), so wireless client traffic tagged for VLAN 30 is dropped at the switch and never reaches DHCP or the gateway.",
+    "Layer 2 - Data Link", "VLAN Not Allowed on AP Uplink Trunk", "High",
+    "vlan_expected:30;trunk_check:Fa0/24"),
+
+add("NS-032", "WIRELESS", "Library Annex",
+    "Only some Library Annex wireless clients connect; others fail with 'unable to join network' even with the right password.",
+    "AP4 should support up to 30 associated clients on 'Library-WiFi'.",
+    """
+AP4# show wlan summary
+WLAN ID  WLAN Name     Status   Max Clients   Current Clients
+4        Library-WiFi  Enabled  10            10
+
+AP4# show wlan statistics
+Association rejections (capacity): 14
+""",
+    "The WLAN's max-clients cap is set to 10, well below actual demand, so once the AP hits capacity every additional client is rejected regardless of correct credentials.",
+    "Layer 2 - Data Link", "WLAN Client Capacity Limit", "Low",
+    "wlan_capacity_check:AP4")
+
+df = pd.DataFrame(cases)
+df.to_csv("C:/cisco_internship_project/data/cases.csv", index=False)
+print(f"Generated {len(df)} cases")
+print(df["category"].value_counts())

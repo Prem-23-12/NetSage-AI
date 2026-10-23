@@ -1,0 +1,33 @@
+case_id,category,rule_findings,n_findings
+NS-001,VLAN,No deterministic findings,0
+NS-002,VLAN,"[Trunk] VLAN 30 not in allowed-VLAN list on trunk Gi0/1 (allowed: 1,10,20)",1
+NS-003,VLAN,No deterministic findings,0
+NS-004,VLAN,[VLAN] VLAN 50 not found in VLAN database,1
+NS-005,GATEWAY,[Gateway] PC default gateway 192.168.10.254 does not match router interface 192.168.10.1,1
+NS-006,GATEWAY,[Interface Down] GigabitEthernet0/1.40      192.168.40.1    YES manual administratively down     down,1
+NS-007,GATEWAY,[Duplicate IP] IP 192.168.30.1 assigned to more than one device,1
+NS-008,GATEWAY,[Subnet Mask] PC-E subnet mask 255.255.0.0 does not match expected 255.255.255.0,1
+NS-009,DHCP,No deterministic findings,0
+NS-010,DHCP,No deterministic findings,0
+NS-011,DHCP,No deterministic findings,0
+NS-012,DHCP,No deterministic findings,0
+NS-013,DNS,No deterministic findings,0
+NS-014,DNS,No deterministic findings,0
+NS-015,DNS,No deterministic findings,0
+NS-016,DNS,No deterministic findings,0
+NS-017,ROUTING,[Routing] Expected route to 192.168.30.0/24 not present in routing table,1
+NS-018,ROUTING,[Routing] Expected route to 192.168.10.0/24 not present in routing table,1
+NS-019,ROUTING,No deterministic findings,0
+NS-020,ROUTING,No deterministic findings,0
+NS-021,ACL,No deterministic findings,0
+NS-022,ACL,No deterministic findings,0
+NS-023,ACL,No deterministic findings,0
+NS-024,ACL,No deterministic findings,0
+NS-025,NAT,No deterministic findings,0
+NS-026,NAT,No deterministic findings,0
+NS-027,NAT,No deterministic findings,0
+NS-028,NAT,No deterministic findings,0
+NS-029,WIRELESS,No deterministic findings,0
+NS-030,WIRELESS,No deterministic findings,0
+NS-031,WIRELESS,"[VLAN] VLAN 30 not found in VLAN database | [Trunk] VLAN 30 not in allowed-VLAN list on trunk Fa0/24 (allowed: 1,10,20)",2
+NS-032,WIRELESS,No deterministic findings,0

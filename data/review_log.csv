@@ -1,0 +1,33 @@
+case_id,decision,correction_reason,corrected_root_cause,reviewer_notes
+NS-001,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-002,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-003,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-004,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-005,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-006,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-007,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-008,Edited,incomplete_explanation,"PC-E's oversized subnet mask (255.255.0.0 vs expected 255.255.255.0) makes it treat the server as locally reachable, so it attempts ARP instead of routing through the gateway - producing intermittent, not total, failures.",AI had the right fault but explained it as generic 'preventing proper communication' instead of the actual ARP-vs-routing mechanism.
+NS-009,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-010,Edited,incomplete_explanation,"The DHCP pool was designed for only 50 hosts per the topology note and is already leasing 48 - that design cap, not raw /24 address-space math, is why it's exhausting under peak load.","AI computed ~195 theoretically usable addresses and framed exhaustion around that number, ignoring the pool's stated 50-host design intent."
+NS-011,Accepted,,,Grounding flag reviewed and overturned (false positive): Cited GigabitEthernet0/0.30 is present in the topology note as 'Gi0/0.30'.
+NS-012,Edited,schema_violation,DHCP pool's dns-server option is set to 0.0.0.0.,"Root cause and fix_steps were correct, but next_command contained full configuration commands instead of a single verify/show command - violates the prompt schema (next_command must be a verify step, not a fix). Corrected next_command should be 'show ip dhcp pool LIB-POOL'."
+NS-013,Edited,incomplete_explanation,"PC-F has no DNS server configured (0.0.0.0), so name resolution fails while raw IP connectivity (ping to 8.8.8.8) works fine - Layer 7 problem, not Layer 3.",Root cause correct; evidence field buried the key L3-vs-L7 distinction in a run-on sentence. Reworded for reviewer legibility.
+NS-014,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-015,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-016,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-017,Accepted,,,Grounding flag reviewed and overturned (false positive): Cited 192.168.30.0 is present in rule_findings.csv text for this case.
+NS-018,Edited,incomplete_explanation,"R2 has no explicit route back to 192.168.10.0/24 (branch), while the return path from HQ to branch works fine - this is an asymmetric routing problem specific to R2's side, not a generic missing route.",AI's 'missing static route on R2' was technically true but flattened an asymmetric-routing problem into a generic one-router fix.
+NS-019,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-020,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-021,Accepted,,,Grounding flag reviewed and overturned (false positive): Cited GigabitEthernet0/0.10 is present in show_output as 'Gi0/0.10'.
+NS-022,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-023,Accepted,,,Grounding flag reviewed and overturned (false positive): Cited GigabitEthernet0/0.30 is present in show_output as 'Gi0/0.30'.
+NS-024,Accepted,,,Grounding flag reviewed and overturned (false positive): Cited 192.168.50.20 is present in the case's expected-fault/topology context.
+NS-025,Edited,unsupported_claim,"'ip nat inside' was never applied to Gi0/0.10 (or any internal interface), so the router doesn't know which interfaces are 'inside' to translate, even though the NAT overload rule and ACL 1 exist.","AI fabricated a second claim - 'the ACL for 192.168.20.0/24 is missing' - that network never appears in this case's evidence at all. Also, next_command mixed in raw config commands (schema_violation), same as NS-012. Primary tag kept as unsupported_claim since it's the more serious issue: a fabricated claim, not just a formatting slip."
+NS-026,Accepted,,,Grounding flag reviewed and overturned (false positive): Cited 192.168.10.0 is present in rule_findings.csv text for this case.
+NS-027,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-028,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-029,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-030,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-031,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
+NS-032,Accepted,,,AI root cause matches expected fault; evidence is grounded. No changes needed.
